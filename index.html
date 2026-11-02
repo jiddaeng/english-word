@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="PDF에서 형광펜으로 표시한 영단어를 찾아 한글 뜻·쓰인 문장과 함께 표로 보여주고 엑셀·CSV로 내려받는 도구">
+<style>body{margin:0}img{max-width:100%}</style>
+<title>형광펜 단어장</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,500;0,8..60,600;1,8..60,400&display=swap">
+<style>
+/* Layout: one centered column, like a single page of a study notebook — attach, export, then the word list. */
+:root {
+  --paper: #fafaf7;
+  --sheet: #ffffff;
+  --ink: #1b2130;
+  --ink-soft: #5a6274;
+  --rule: #e3e4de;
+  --accent: #2f4fc4;
+  --accent-ink: #ffffff;
+  --marker: #fde767;
+  --marker-ink: #1b2130;
+  --danger: #b4322a;
+  --font-ui: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-word: "Source Serif 4", Georgia, "Times New Roman", serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #14171e; --sheet: #1b1f28; --ink: #e8e9ec; --ink-soft: #9ba2b2; --rule: #2c313d;
+    --accent: #8ea5ff; --accent-ink: #10131a; --marker: #6b5d12; --marker-ink: #fff6c4; --danger: #ff8a80;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #14171e; --sheet: #1b1f28; --ink: #e8e9ec; --ink-soft: #9ba2b2; --rule: #2c313d;
+  --accent: #8ea5ff; --accent-ink: #10131a; --marker: #6b5d12; --marker-ink: #fff6c4; --danger: #ff8a80;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  padding-block: 40px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.drop {
+  align-self: center;
+  width: min(100%, 520px);
+  border: 1.5px dashed var(--rule);
+  border-radius: 14px;
+  background: var(--sheet);
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  transition: border-color .15s, background .15s;
+}
+.drop.over { border-color: var(--accent); }
+.file-info { margin: 0; color: var(--ink-soft); font-size: 13px; overflow-wrap: anywhere; }
+.file-info strong { color: var(--ink); font-weight: 600; }
+
+.btn {
+  font: inherit;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  color: var(--ink);
+  padding: 10px 18px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: border-color .15s, transform .05s;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); padding: 12px 26px; font-size: 16px; }
+.btn.small { padding: 5px 12px; font-size: 13px; }
+.btn svg { width: 18px; height: 18px; flex: none; }
+
+.exports { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.status { margin: -12px 0 0; min-height: 1.6em; text-align: center; color: var(--ink-soft); font-size: 14px; }
+.status.error { color: var(--danger); }
+
+.preview { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.preview-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.preview-head h2 { margin: 0; font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.tag {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em;
+  border: 1px solid var(--rule); color: var(--ink-soft);
+  border-radius: 999px; padding: 1px 8px;
+}
+.preview-head .meta { color: var(--ink-soft); font-size: 13px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 12px; background: var(--sheet); }
+table { width: 100%; border-collapse: collapse; min-width: 640px; }
+th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+tbody tr:last-child td { border-bottom: none; }
+th {
+  font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--ink-soft);
+  background: color-mix(in srgb, var(--paper) 60%, var(--sheet));
+  position: sticky; top: 0;
+}
+col.c-word { width: 20%; }
+col.c-mean { width: 34%; }
+col.c-x { width: 44px; }
+td.word { font-family: var(--font-word); font-size: 18px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+td.word .base { display: block; font-family: var(--font-ui); font-size: 12px; font-weight: 400; color: var(--ink-soft); margin-top: 3px; }
+td.mean { font-size: 14px; }
+td.mean[contenteditable="true"]:focus { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.pos { display: inline-block; font-size: 11px; font-weight: 600; color: var(--accent); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-right: 4px; line-height: 1.5; }
+.sense { display: block; }
+.sense + .sense { margin-top: 2px; }
+.ctx { font-weight: 700; text-decoration: underline; text-decoration-color: var(--marker); text-decoration-thickness: 3px; text-underline-offset: 2px; }
+.pending { color: var(--ink-soft); font-style: italic; }
+td.sent { font-family: var(--font-word); font-size: 15px; line-height: 1.55; color: var(--ink); }
+td.sent mark { background: var(--marker); color: var(--marker-ink); padding: 0 2px; border-radius: 2px; }
+td.sent .more { display: block; font-family: var(--font-ui); font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
+.x {
+  font: inherit; border: none; background: none; color: var(--ink-soft); cursor: pointer;
+  width: 28px; height: 28px; border-radius: 6px; font-size: 18px; line-height: 1;
+}
+.x:hover { background: var(--paper); color: var(--danger); }
+.x:focus-visible { outline: 2px solid var(--accent); }
+.is-example td { color: var(--ink-soft); }
+.empty td { text-align: center; color: var(--ink-soft); padding: 32px 14px; }
+.foot { color: var(--ink-soft); font-size: 12.5px; margin: 0; }
+
+@media (max-width: 560px) {
+  .wrap { padding-block: 24px 48px; gap: 22px; }
+  .exports .btn { flex: 1 1 100%; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <section class="drop" id="drop" aria-label="PDF 첨부">
+    <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+    <button class="btn primary" id="pick" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.4 11.1l-9.2 9.2a6 6 0 01-8.5-8.5l9.2-9.2a4 4 0 015.7 5.7l-9.2 9.2a2 2 0 01-2.8-2.8l8.5-8.5"/></svg>
+      PDF 첨부
+    </button>
+    <p class="file-info" id="fileInfo">또는 여기로 PDF 파일을 끌어다 놓으세요</p>
+  </section>
+
+  <div class="exports">
+    <button class="btn" id="dlXlsx" type="button" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 19h16"/></svg>
+      엑셀 파일 받기 (.xlsx)
+    </button>
+    <button class="btn" id="dlCsv" type="button" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 19h16"/></svg>
+      CSV 파일 받기 (.csv)
+    </button>
+  </div>
+  <p class="status" id="status" role="status" aria-live="polite"></p>
+
+  <section class="preview">
+    <div class="preview-head">
+      <h2>미리보기 <span class="tag" id="exampleTag">예시</span></h2>
+      <div class="meta">
+        <span id="count"></span>
+        <button class="btn small" id="retry" type="button" hidden>빠진 뜻 다시 찾기</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <colgroup><col class="c-word"><col class="c-mean"><col class="c-sent"><col class="c-x"></colgroup>
+        <thead><tr><th scope="col">영단어</th><th scope="col">한글뜻</th><th scope="col">쓰인 문장</th><th scope="col"><span class="sr" hidden>삭제</span></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="foot">한글뜻 칸은 눌러서 직접 고칠 수 있어요. 잘못 잡힌 단어는 × 로 지우면 파일에서도 빠져요. 엑셀·CSV 파일에는 영단어와 한글뜻만 들어가요.</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const fileInput = $("file"), drop = $("drop"), statusEl = $("status"), rowsEl = $("rows");
+  const btnXlsx = $("dlXlsx"), btnCsv = $("dlCsv"), btnRetry = $("retry");
+
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+
+  // ---------- state ----------
+  const EXAMPLE = [
+    { word: "reluctant", base: "", meanings: [{ pos: "형", ko: ["꺼리는", "마지못한", "주저하는"] }], context: "꺼리는",
+      sentences: [{ toks: "Many students are reluctant to ask questions in class .".split(" "), s: 3, e: 3 }] },
+    { word: "conducted", base: "conduct", meanings: [{ pos: "동", ko: ["수행하다", "실시하다", "지휘하다", "(열·전기를) 전도하다"] }, { pos: "명", ko: ["행동", "품행", "실시"] }], context: "실시하다",
+      sentences: [{ toks: "The survey was conducted over three weeks in spring .".split(" "), s: 3, e: 3 }] },
+    { word: "give up", base: "", meanings: [{ pos: "구", ko: ["포기하다", "그만두다", "(습관을) 끊다", "넘겨주다"] }], context: "포기하다",
+      sentences: [{ toks: "She refused to give up on her dream of studying abroad .".split(" "), s: 3, e: 4 }] },
+  ];
+  let entries = [];      // {word, base, meanings, context, sentences, override, status}
+  let isExample = true;
+  let runId = 0;
+
+  // ---------- helpers ----------
+  const setStatus = (msg, isError = false) => { statusEl.textContent = msg; statusEl.classList.toggle("error", isError); };
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  function meaningText(e) {
+    if (e.override != null) return e.override;
+    if (!e.meanings || !e.meanings.length) return "";
+    return e.meanings.map((m) => (m.pos ? `[${m.pos}] ` : "") + m.ko.join(", ")).join("  ");
+  }
+
+  function sentenceHTML(sent) {
+    const out = [];
+    sent.toks.forEach((t, i) => {
+      let pre = "", core = t, post = "";
+      if (i === sent.s) { pre = core.match(/^[^A-Za-z]*/)[0]; core = core.slice(pre.length); }
+      if (i === sent.e) { post = core.match(/[^A-Za-z]*$/)[0]; core = core.slice(0, core.length - post.length); }
+      out.push(esc(pre) + (i === sent.s ? "<mark>" : "") + esc(core) + (i === sent.e ? "</mark>" : "") + esc(post));
+    });
+    let html = out.join(" ").replace(/ ([.,;:!?)\]”’])/g, "$1").replace(/([(\[“]) /g, "$1");
+    if (sent.cutStart) html = "… " + html;
+    if (sent.cutEnd) html += " …";
+    return html;
+  }
+
+  function meaningHTML(e) {
+    if (e.override != null) return esc(e.override);
+    if (e.status === "loading") return '<span class="pending">뜻 찾는 중…</span>';
+    if (!e.meanings || !e.meanings.length) return '<span class="pending">' + (e.status === "error" ? "뜻을 가져오지 못했어요" : "—") + "</span>";
+    return e.meanings.map((m) => {
+      const ko = m.ko.map((k) => (e.context && k === e.context ? `<span class="ctx">${esc(k)}</span>` : esc(k))).join(", ");
+      return `<span class="sense">${m.pos ? `<span class="pos">${esc(m.pos)}</span>` : ""}${ko}</span>`;
+    }).join("");
+  }
+
+  function render() {
+    const list = isExample ? EXAMPLE : entries;
+    $("exampleTag").hidden = !isExample;
+    btnXlsx.disabled = btnCsv.disabled = isExample || entries.length === 0;
+    $("count").textContent = isExample ? "PDF를 첨부하면 이 자리에 단어가 채워져요" : `단어 ${entries.length}개`;
+    btnRetry.hidden = isExample || !entries.some((e) => e.status === "error" && e.override == null);
+    if (!isExample && entries.length === 0) {
+      rowsEl.innerHTML = '<tr class="empty"><td colspan="4">표시할 단어가 없어요.</td></tr>';
+      return;
+    }
+    rowsEl.innerHTML = list.map((e, i) => {
+      const s0 = e.sentences[0];
+      const more = e.sentences.length > 1 ? `<span class="more">이 단어가 나온 문장 ${e.sentences.length}개 중 첫 문장</span>` : "";
+      const base = e.base && e.base.toLowerCase() !== e.word.toLowerCase() ? `<span class="base">원형 ${esc(e.base)}</span>` : "";
+      return `<tr class="${isExample ? "is-example" : ""}" data-i="${i}">
+        <td class="word">${esc(e.word)}${base}</td>
+        <td class="mean"${isExample ? "" : ' contenteditable="true" spellcheck="false"'} data-i="${i}">${meaningHTML(e)}</td>
+        <td class="sent">${s0 ? sentenceHTML(s0) : ""}${more}</td>
+        <td>${isExample ? "" : `<button class="x" type="button" data-del="${i}" aria-label="${esc(e.word)} 삭제">×</button>`}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  rowsEl.addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-del]");
+    if (!b) return;
+    entries.splice(Number(b.dataset.del), 1);
+    render();
+  });
+  rowsEl.addEventListener("focusin", (ev) => {
+    const td = ev.target.closest("td.mean[contenteditable]");
+    if (!td) return;
+    const e = entries[Number(td.dataset.i)];
+    if (e && e.status !== "loading") td.textContent = meaningText(e);
+  });
+  rowsEl.addEventListener("focusout", (ev) => {
+    const td = ev.target.closest("td.mean[contenteditable]");
+    if (!td) return;
+    const e = entries[Number(td.dataset.i)];
+    if (!e) return;
+    const val = td.textContent.trim();
+    if (val !== meaningText(e)) e.override = val;
+    td.innerHTML = meaningHTML(e);
+  });
+  rowsEl.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && ev.target.closest("td.mean")) { ev.preventDefault(); ev.target.blur(); }
+  });
+
+  // ---------- PDF reading ----------
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  measureCtx.font = "100px serif";
+
+  function quadRects(annot, vp) {
+    const rects = [];
+    const q = annot.quadPoints;
+    const toRect = (xs, ys) => {
+      const r = vp.convertToViewportRectangle([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
+      return [Math.min(r[0], r[2]), Math.min(r[1], r[3]), Math.max(r[0], r[2]), Math.max(r[1], r[3])];
+    };
+    if (q && q.length) {
+      if (typeof q[0] === "number") {           // flat [x1,y1,...x4,y4]*n
+        for (let i = 0; i + 7 < q.length; i += 8) rects.push(toRect([q[i], q[i + 2], q[i + 4], q[i + 6]], [q[i + 1], q[i + 3], q[i + 5], q[i + 7]]));
+      } else {                                   // [[{x,y}x4], ...]
+        for (const quad of q) rects.push(toRect(quad.map((p) => p.x), quad.map((p) => p.y)));
+      }
+    } else if (annot.rect) {
+      rects.push(toRect([annot.rect[0], annot.rect[2]], [annot.rect[1], annot.rect[3]]));
+    }
+    return rects;
+  }
+
+  function overlapRatio(box, r) {
+    const w = Math.min(box[2], r[2]) - Math.max(box[0], r[0]);
+    const h = Math.min(box[3], r[3]) - Math.max(box[1], r[1]);
+    if (w <= 0 || h <= 0) return 0;
+    return (w * h) / ((box[2] - box[0]) * (box[3] - box[1]));
+  }
+
+  // Share of a word's box covered by a saturated, light colour — a highlighter stroke rather than white paper or dark ink.
+  function markerCoverage(img, W, H, x0, y0, x1, y1) {
+    x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+    x1 = Math.min(W - 1, Math.ceil(x1)); y1 = Math.min(H - 1, Math.ceil(y1));
+    if (x1 <= x0 || y1 <= y0) return 0;
+    let colored = 0, total = 0;
+    const step = Math.max(1, Math.floor(Math.min(x1 - x0, y1 - y0) / 12));
+    for (let y = y0; y <= y1; y += step) {
+      for (let x = x0; x <= x1; x += step) {
+        const k = (y * W + x) * 4;
+        const r = img[k], g = img[k + 1], b = img[k + 2];
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        total++;
+        if (max > 140 && (max - min) / max > 0.22) colored++;
+      }
+    }
+    return total ? colored / total : 0;
+  }
+
+  async function readPage(page) {
+    const vp = page.getViewport({ scale: 2 });
+    const W = Math.ceil(vp.width), H = Math.ceil(vp.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+    await page.render({ canvasContext: ctx, viewport: vp, annotationMode: pdfjsLib.AnnotationMode.ENABLE }).promise;
+    const img = ctx.getImageData(0, 0, W, H).data;
+
+    const annots = await page.getAnnotations({ intent: "display" });
+    const hlRects = [];
+    for (const a of annots) if (a.subtype === "Highlight") hlRects.push(...quadRects(a, vp));
+
+    const tc = await page.getTextContent();
+    const toks = [];
+    for (const item of tc.items) {
+      if (typeof item.str !== "string") continue;
+      const str = item.str;
+      if (!str.trim()) { if (item.hasEOL && toks.length) toks[toks.length - 1].eol = true; continue; }
+      const t = pdfjsLib.Util.transform(vp.transform, item.transform);
+      const fontH = Math.hypot(t[2], t[3]) || 1;
+      const horizontal = Math.abs(t[1]) < 1e-3 * Math.abs(t[0]) && t[0] > 0;
+      const width = item.width * vp.scale;
+      const full = measureCtx.measureText(str).width || 1;
+      const re = /\S+/g;
+      let m;
+      while ((m = re.exec(str))) {
+        const tok = { text: m[0], hl: false, eol: false, size: fontH };
+        if (horizontal) {
+          const a = t[4] + (measureCtx.measureText(str.slice(0, m.index)).width / full) * width;
+          const b = t[4] + (measureCtx.measureText(str.slice(0, m.index + m[0].length)).width / full) * width;
+          const base = t[5];
+          const box = [a, base - fontH * 0.8, b, base + fontH * 0.15];
+          tok.ann = hlRects.some((r) => overlapRatio(box, r) > 0.35);
+          const inset = (b - a) * 0.12;
+          tok.px = markerCoverage(img, W, H, a + inset, base - fontH * 0.7, b - inset, base - fontH * 0.1) > 0.4;
+        } else {
+          const cx = t[4], cy = t[5] - fontH * 0.4;
+          tok.ann = hlRects.some((r) => cx >= r[0] && cx <= r[2] && cy >= r[1] && cy <= r[3]);
+          tok.px = false;
+        }
+        toks.push(tok);
+      }
+      if (item.hasEOL && toks.length) toks[toks.length - 1].eol = true;
+    }
+    // A tinted background box would light up nearly every word; ignore colour detection on such pages.
+    const pxShare = toks.length ? toks.filter((x) => x.px).length / toks.length : 0;
+    const trustPx = pxShare < 0.6;
+    for (const x of toks) x.hl = x.ann || (trustPx && x.px);
+    if (toks.length) toks[toks.length - 1].eol = true;
+    canvas.width = canvas.height = 0;
+    return toks;
+  }
+
+  // ---------- words & sentences ----------
+  const STOP = new Set("a an the of to in on at by for with from and or but as is are was were be been being it its this that these those he she they we you i his her their our your my me him them us not no so than then there here".split(" "));
+  const ABBR = /^(mr|mrs|ms|dr|prof|st|vs|etc|e\.g|i\.e|no|fig|jr|sr|u\.s)\.$/i;
+  const clean = (t) => t.replace(/^[^A-Za-z]+/, "").replace(/[^A-Za-z]+$/, "");
+  const isEnglish = (w) => /^[A-Za-z][A-Za-z'’-]*[A-Za-z]$/.test(w) || /^[A-Za-z]$/.test(w);
+
+  function joinHyphens(toks) {
+    const out = [];
+    for (let i = 0; i < toks.length; i++) {
+      const t = toks[i], n = toks[i + 1];
+      if (t.eol && n && /[A-Za-z]-$/.test(t.text) && /^[a-z]/.test(n.text)) {
+        out.push({ text: t.text.slice(0, -1) + n.text, hl: t.hl || n.hl, eol: n.eol, size: t.size });
+        i++;
+      } else out.push(t);
+    }
+    return out;
+  }
+
+  function buildSentences(toks) {
+    const sentOf = new Array(toks.length);
+    const spans = [];
+    let start = 0;
+    for (let i = 0; i < toks.length; i++) {
+      const w = toks[i].text;
+      const ends = /[.!?]["')\]’”]*$/.test(w) && !ABBR.test(w.replace(/["')\]’”]+$/, ""));
+      // a change of font size (a heading, a caption) also closes the sentence
+      const n = toks[i + 1];
+      const sizeBreak = n && Math.abs(n.size - toks[i].size) / Math.max(n.size, toks[i].size) > 0.15;
+      if (ends || sizeBreak || i === toks.length - 1) { spans.push([start, i]); start = i + 1; }
+    }
+    spans.forEach(([a, b], k) => { for (let i = a; i <= b; i++) sentOf[i] = k; });
+    return { spans, sentOf };
+  }
+
+  function sentenceFor(toks, span, s, e) {
+    const MAX = 45;
+    let [a, b] = span;
+    let cutStart = false, cutEnd = false;
+    if (b - a + 1 > MAX) {
+      const na = Math.max(a, s - 20), nb = Math.min(b, e + 20);
+      cutStart = na > a; cutEnd = nb < b; a = na; b = nb;
+    }
+    return { toks: toks.slice(a, b + 1).map((t) => t.text), s: s - a, e: e - a, cutStart, cutEnd };
+  }
+
+  function collectEntries(allToks) {
+    const toks = joinHyphens(allToks);
+    const { spans, sentOf } = buildSentences(toks);
+    const map = new Map();
+    const add = (word, s, e) => {
+      const key = word.toLowerCase();
+      const sent = sentenceFor(toks, spans[sentOf[s]], s, e);
+      if (!map.has(key)) map.set(key, { word, base: "", meanings: null, context: "", sentences: [], override: null, status: "loading" });
+      const entry = map.get(key);
+      const sig = sent.toks.join(" ");
+      if (!entry.sentences.some((x) => x.toks.join(" ") === sig)) entry.sentences.push(sent);
+    };
+    let i = 0;
+    while (i < toks.length) {
+      if (!toks[i].hl) { i++; continue; }
+      // a run of highlighted tokens inside one sentence, broken at commas and other clause punctuation
+      const run = [];
+      let j = i;
+      while (j < toks.length && toks[j].hl && sentOf[j] === sentOf[i]) {
+        run.push(j);
+        const raw = toks[j].text;
+        j++;
+        if (/[,;:.!?)\]”"]$/.test(raw)) break;
+      }
+      const words = run.map((k) => ({ k, w: clean(toks[k].text) })).filter((x) => x.w && isEnglish(x.w));
+      if (words.length >= 2 && words.length <= 4) {
+        add(words.map((x) => x.w).join(" "), words[0].k, words[words.length - 1].k);
+      } else {
+        for (const x of words) {
+          if (words.length > 4 && STOP.has(x.w.toLowerCase())) continue;
+          if (x.w.length < 2) continue;
+          add(x.w, x.k, x.k);
+        }
+      }
+      i = j;
+    }
+    return [...map.values()];
+  }
+
+  // ---------- Korean meanings via Claude ----------
+  let samplePromise = null;
+  const getSample = () => (samplePromise ||= (window.claude?.use ? window.claude.use("sample").catch(() => null) : Promise.resolve(null)));
+
+  function promptFor(batch) {
+    const lines = batch.map(({ idx, e }) => {
+      const s = e.sentences[0];
+      const sent = s ? s.toks.join(" ").replace(/ ([.,;:!?)\]”’])/g, "$1") : "";
+      return `${idx}. word: ${JSON.stringify(e.word)} / sentence: ${JSON.stringify(sent)}`;
+    }).join("\n");
+    return `너는 영한사전 편집자야. 아래 항목마다 영어 단어(또는 구)의 한국어 뜻을 정리해 줘.
+
+규칙
+- 사전에 실린 주요 의미를 품사별로 빠짐없이 적어. 뜻이 여러 개면 여러 개 모두 적어. 거의 쓰이지 않는 고어만 빼.
+- 품사(pos)는 명, 동, 형, 부, 전, 접, 대, 감, 구(숙어·구동사) 중 하나로 적어.
+- 각 뜻은 짧은 한국어 낱말이나 구로 적어(예: "포기하다", "버리다").
+- 단어가 변화형(복수형, 과거형, -ing, 비교급 등)이면 원형 기준으로 뜻을 적고 base에 원형을 적어. 이미 원형이면 base는 빈 문자열.
+- context에는 함께 준 문장에서 쓰인 뜻을, 네가 적은 뜻 중 하나와 글자까지 똑같이 적어.
+
+출력 형식: 한 줄에 JSON 객체 하나씩, 항목 순서대로. 다른 글, 코드블록, 빈 줄 없이.
+{"i":0,"base":"abandon","meanings":[{"pos":"동","ko":["버리다","포기하다","떠나다"]},{"pos":"명","ko":["방종","자유분방"]}],"context":"포기하다"}
+
+항목
+${lines}`;
+  }
+
+  function applyLine(line, batchIdx) {
+    line = line.trim();
+    if (!line.startsWith("{")) return;
+    let o;
+    try { o = JSON.parse(line); } catch { return; }
+    const idx = Number(o.i);
+    if (!batchIdx.has(idx)) return;
+    const e = batchIdx.get(idx);
+    const meanings = Array.isArray(o.meanings) ? o.meanings
+      .map((m) => ({ pos: String(m.pos || "").trim(), ko: (Array.isArray(m.ko) ? m.ko : [m.ko]).map((k) => String(k || "").trim()).filter(Boolean) }))
+      .filter((m) => m.ko.length) : [];
+    if (!meanings.length) return;
+    e.meanings = meanings;
+    e.base = String(o.base || "").trim();
+    e.context = String(o.context || "").trim();
+    e.status = "done";
+  }
+
+  // ---------- Korean meanings via the Google dictionary (outside claude.ai) ----------
+  const POS_KO = { noun: "명", verb: "동", adjective: "형", adverb: "부", preposition: "전", conjunction: "접", pronoun: "대", interjection: "감", abbreviation: "약", phrase: "구", prefix: "접두", suffix: "접미", article: "관", particle: "불" };
+  const dictCache = new Map();
+
+  async function lookup(word) {
+    const key = word.toLowerCase();
+    if (dictCache.has(key)) return dictCache.get(key);
+    const url = "https://translate.googleapis.com/translate_a/single?client=gtx&hl=en&sl=en&tl=ko&dt=t&dt=bd&q=" + encodeURIComponent(word);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("http " + res.status);
+    const data = await res.json();
+    const main = (Array.isArray(data[0]) ? data[0] : []).map((x) => x && x[0]).filter(Boolean).join("").trim();
+    let base = "";
+    const meanings = (Array.isArray(data[1]) ? data[1] : []).map((g) => {
+      if (!base && typeof g[3] === "string") base = g[3];
+      return { pos: POS_KO[g[0]] || g[0] || "", ko: [...new Set((g[1] || []).map((k) => String(k).trim()).filter(Boolean))] };
+    }).filter((m) => m.ko.length);
+    // the plain translation is usually the most common sense; keep it in front when the dictionary lists it elsewhere or not at all
+    if (main && main.toLowerCase() !== key && !meanings.some((m) => m.ko.includes(main))) meanings.unshift({ pos: "", ko: [main] });
+    const r = { meanings, base, context: main };
+    dictCache.set(key, r);
+    return r;
+  }
+
+  async function fillFromDictionary(targets, myRun) {
+    let done = 0, failed = 0, next = 0;
+    const total = targets.length;
+    const progress = () => setStatus(`형광표시 단어 ${entries.length}개를 찾았어요. 한글 뜻을 찾는 중… (${done}/${total})`);
+    progress();
+    const worker = async () => {
+      while (next < targets.length && myRun === runId) {
+        const e = targets[next++];
+        try {
+          const r = await lookup(e.word);
+          if (r.meanings.length) Object.assign(e, r, { status: "done" });
+          else { e.status = "error"; failed++; }
+        } catch { e.status = "error"; failed++; }
+        done++;
+        if (myRun === runId) { progress(); render(); }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    if (myRun !== runId) return;
+    render();
+    if (!failed) setStatus(`단어 ${entries.length}개의 뜻을 모두 채웠어요. 아래 표를 확인하고 파일을 받으세요.`);
+    else setStatus(`뜻 ${failed}개를 채우지 못했어요. 잠시 뒤 '빠진 뜻 다시 찾기'를 누르거나 칸을 눌러 직접 적어 주세요.`, true);
+  }
+
+  async function fillMeanings(targets, myRun) {
+    const sample = await getSample();
+    if (myRun !== runId) return;
+    if (!sample) return fillFromDictionary(targets, myRun);
+    const SIZE = 25;
+    const batches = [];
+    for (let i = 0; i < targets.length; i += SIZE) batches.push(targets.slice(i, i + SIZE));
+    let done = 0, stop = false, failCode = null;
+    const total = targets.length;
+    const progress = () => setStatus(`형광표시 단어 ${entries.length}개를 찾았어요. 한글 뜻을 찾는 중… (${done}/${total})`);
+    progress();
+
+    const runBatch = async (batch) => {
+      const batchIdx = new Map(batch.map((e, k) => [k, e]));
+      let pending = "";
+      const eat = ({ delta }) => {
+        if (myRun !== runId) return;
+        const parts = (pending + delta).split("\n");
+        pending = parts.pop();
+        for (const p of parts) applyLine(p, batchIdx);
+        done = targets.filter((e) => e.status === "done").length;
+        progress(); render();
+      };
+      try {
+        await sample(promptFor(batch.map((e, k) => ({ idx: k, e }))), { onText: eat, modelTier: "default" });
+        applyLine(pending, batchIdx);
+      } catch (err) {
+        if (err && err.text) { const parts = err.text.split("\n"); for (const p of parts) applyLine(p, batchIdx); }
+        failCode = err && err.code;
+        if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed", "rate_limited", "session_expired"].includes(failCode)) stop = true;
+      }
+      batch.forEach((e) => { if (e.status !== "done") e.status = "error"; });
+    };
+
+    // two batches at a time
+    let next = 0;
+    const worker = async () => {
+      while (!stop && next < batches.length && myRun === runId) await runBatch(batches[next++]);
+    };
+    await Promise.all([worker(), worker()]);
+    if (myRun !== runId) return;
+    targets.forEach((e) => { if (e.status === "loading") e.status = "error"; });
+    render();
+    const missing = targets.filter((e) => e.status === "error").length;
+    if (!missing) setStatus(`단어 ${entries.length}개의 뜻을 모두 채웠어요. 아래 표를 확인하고 파일을 받으세요.`);
+    else if (failCode === "not_granted") setStatus("Claude 사용을 허용하지 않아 뜻을 채우지 못했어요. 한글뜻 칸을 눌러 직접 적을 수 있어요.", true);
+    else if (failCode === "rate_limited") setStatus(`뜻 ${missing}개를 채우지 못했어요. 사용량 제한에 걸렸으니 잠시 뒤 '빠진 뜻 다시 찾기'를 눌러 주세요.`, true);
+    else if (failCode === "session_expired") setStatus("로그인이 만료됐어요. 다시 로그인한 뒤 '빠진 뜻 다시 찾기'를 눌러 주세요.", true);
+    else setStatus(`뜻 ${missing}개를 채우지 못했어요. '빠진 뜻 다시 찾기'를 누르거나 칸을 눌러 직접 적어 주세요.`, true);
+  }
+
+  btnRetry.addEventListener("click", () => {
+    const targets = entries.filter((e) => e.status === "error" && e.override == null);
+    if (!targets.length) return;
+    targets.forEach((e) => { e.status = "loading"; });
+    render();
+    fillMeanings(targets, runId);
+  });
+
+  // ---------- file handling ----------
+  let baseName = "단어장";
+  async function handleFile(file) {
+    if (!file) return;
+    if (!/pdf$/i.test(file.type) && !/\.pdf$/i.test(file.name)) { setStatus("PDF 파일만 올릴 수 있어요.", true); return; }
+    if (!window.pdfjsLib) { setStatus("PDF 도구를 불러오지 못했어요. 페이지를 새로고침해 주세요.", true); return; }
+    const myRun = ++runId;
+    baseName = file.name.replace(/\.pdf$/i, "") || "단어장";
+    const size = file.size < 1024 * 1024 ? `${Math.max(1, Math.round(file.size / 1024))}KB` : `${(file.size / 1024 / 1024).toFixed(1)}MB`;
+    $("fileInfo").innerHTML = `<strong>${esc(file.name)}</strong> · ${size} · 다른 파일을 올리려면 다시 첨부하세요`;
+    isExample = false; entries = []; render();
+    btnXlsx.disabled = btnCsv.disabled = true;
+    setStatus("PDF를 여는 중…");
+    let pdf;
+    try {
+      pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    } catch (err) {
+      setStatus(err && err.name === "PasswordException" ? "암호가 걸린 PDF는 열 수 없어요." : "PDF를 열지 못했어요. 파일이 손상되지 않았는지 확인해 주세요.", true);
+      return;
+    }
+    const all = [];
+    // pdf.js paces drawing with requestAnimationFrame, which stops in a background tab; a message-channel tick keeps it going.
+    const realRaf = window.requestAnimationFrame;
+    const ch = new MessageChannel(), queue = [];
+    ch.port1.onmessage = () => { const cb = queue.shift(); if (cb) cb(performance.now()); };
+    window.requestAnimationFrame = (cb) => { queue.push(cb); ch.port2.postMessage(0); return 0; };
+    try {
+      for (let p = 1; p <= pdf.numPages; p++) {
+        if (myRun !== runId) return;
+        setStatus(`${pdf.numPages}쪽 중 ${p}쪽에서 형광표시를 찾는 중…`);
+        try {
+          const page = await pdf.getPage(p);
+          all.push(...(await readPage(page)));
+          page.cleanup();
+        } catch (err) { console.warn("page", p, err); }
+      }
+    } finally {
+      window.requestAnimationFrame = realRaf;
+    }
+    if (myRun !== runId) return;
+    if (!all.length) {
+      render();
+      setStatus("PDF에서 글자를 읽을 수 없어요. 사진이나 스캔으로 만든 PDF는 글자 정보가 없어서 단어를 찾지 못해요.", true);
+      return;
+    }
+    entries = collectEntries(all);
+    render();
+    if (!entries.length) {
+      setStatus("형광표시된 영단어를 찾지 못했어요. 형광펜이 단어 위에 칠해져 있는지 확인해 주세요.", true);
+      return;
+    }
+    fillMeanings(entries.slice(), myRun);
+  }
+
+  $("pick").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => { handleFile(fileInput.files[0]); fileInput.value = ""; });
+  ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+  drop.addEventListener("drop", (e) => handleFile(e.dataTransfer.files[0]));
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => { if (!drop.contains(e.target)) { e.preventDefault(); handleFile(e.dataTransfer.files[0]); } });
+
+  // ---------- export ----------
+  const tableRows = () => entries.map((e) => [e.word, meaningText(e)]);
+
+  async function saveFile(filename, blob) {
+    const downloads = window.claude?.use ? await window.claude.use("downloads").catch(() => null) : null;
+    if (downloads) {
+      try { await downloads.save({ filename, data: blob }); setStatus(`${filename} 파일을 저장했어요.`); }
+      catch (err) {
+        if (err && err.code === "declined") setStatus("파일 저장을 취소했어요.");
+        else if (err && err.code === "rate_limited") setStatus("저장 창이 이미 열려 있어요. 잠시 뒤 다시 눌러 주세요.", true);
+        else setStatus("이 화면에서는 파일을 저장할 수 없어요.", true);
+      }
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  btnCsv.addEventListener("click", () => {
+    const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = "﻿" + [["영단어", "한글뜻"], ...tableRows()].map((r) => r.map(q).join(",")).join("\r\n");
+    saveFile(`${baseName}_단어장.csv`, new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  });
+
+  btnXlsx.addEventListener("click", () => {
+    if (!window.XLSX) { setStatus("엑셀 도구를 불러오지 못했어요. 페이지를 새로고침해 주세요.", true); return; }
+    const ws = XLSX.utils.aoa_to_sheet([["영단어", "한글뜻"], ...tableRows()]);
+    ws["!cols"] = [{ wch: 22 }, { wch: 70 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "단어장");
+    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    saveFile(`${baseName}_단어장.xlsx`, new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
