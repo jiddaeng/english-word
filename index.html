@@ -213,9 +213,9 @@ td.sent .more { display: block; font-family: var(--font-ui); font-size: 12px; co
   const EXAMPLE = [
     { word: "reluctant", base: "", meanings: [{ pos: "형", ko: ["꺼리는", "마지못한", "주저하는"] }], context: "꺼리는",
       sentences: [{ toks: "Many students are reluctant to ask questions in class .".split(" "), s: 3, e: 3 }] },
-    { word: "conducted", base: "conduct", meanings: [{ pos: "동", ko: ["수행하다", "실시하다", "지휘하다", "(열·전기를) 전도하다"] }, { pos: "명", ko: ["행동", "품행", "실시"] }], context: "실시하다",
+    { word: "conducted", base: "conduct", meanings: [{ pos: "동", ko: ["수행하다", "실시하다", "지휘하다"] }, { pos: "명", ko: ["행동", "품행", "실시"] }], context: "실시하다",
       sentences: [{ toks: "The survey was conducted over three weeks in spring .".split(" "), s: 3, e: 3 }] },
-    { word: "give up", base: "", meanings: [{ pos: "구", ko: ["포기하다", "그만두다", "(습관을) 끊다", "넘겨주다"] }], context: "포기하다",
+    { word: "give up", base: "", meanings: [{ pos: "구", ko: ["포기하다", "그만두다", "(습관을) 끊다"] }], context: "포기하다",
       sentences: [{ toks: "She refused to give up on her dream of studying abroad .".split(" "), s: 3, e: 4 }] },
   ];
   let entries = [];      // {word, base, meanings, context, sentences, override, status}
@@ -225,6 +225,22 @@ td.sent .more { display: block; font-family: var(--font-ui); font-size: 12px; co
   // ---------- helpers ----------
   const setStatus = (msg, isError = false) => { statusEl.textContent = msg; statusEl.classList.toggle("error", isError); };
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // Keep only the representative senses: same-POS groups merged, at most MAX_SENSES per POS (most common first).
+  // The sense used in the sentence (context) is kept even if it ranks lower, so its highlight never disappears.
+  const MAX_SENSES = 3;
+  function topSenses(meanings, context) {
+    const groups = new Map();
+    for (const m of meanings) {
+      const g = groups.get(m.pos) || groups.set(m.pos, []).get(m.pos);
+      for (const k of m.ko) if (k && !g.includes(k)) g.push(k);
+    }
+    return [...groups].map(([pos, ko]) => {
+      const i = context ? ko.indexOf(context) : -1;
+      if (i >= MAX_SENSES) { ko.splice(i, 1); ko.splice(MAX_SENSES - 1, 0, context); }
+      return { pos, ko: ko.slice(0, MAX_SENSES) };
+    }).filter((m) => m.ko.length);
+  }
 
   function meaningText(e) {
     if (e.override != null) return e.override;
@@ -505,7 +521,8 @@ td.sent .more { display: block; font-family: var(--font-ui); font-size: 12px; co
     return `너는 영한사전 편집자야. 아래 항목마다 영어 단어(또는 구)의 한국어 뜻을 정리해 줘.
 
 규칙
-- 사전에 실린 주요 의미를 품사별로 빠짐없이 적어. 뜻이 여러 개면 여러 개 모두 적어. 거의 쓰이지 않는 고어만 빼.
+- 품사별로 가장 대표적이고 자주 쓰이는 뜻만 최대 3개까지, 많이 쓰이는 순서대로 적어. 드물거나 전문적인 뜻은 빼.
+- 같은 품사는 한 번만 적어(품사 하나당 객체 하나).
 - 품사(pos)는 명, 동, 형, 부, 전, 접, 대, 감, 구(숙어·구동사) 중 하나로 적어.
 - 각 뜻은 짧은 한국어 낱말이나 구로 적어(예: "포기하다", "버리다").
 - 단어가 변화형(복수형, 과거형, -ing, 비교급 등)이면 원형 기준으로 뜻을 적고 base에 원형을 적어. 이미 원형이면 base는 빈 문자열.
@@ -526,13 +543,13 @@ ${lines}`;
     const idx = Number(o.i);
     if (!batchIdx.has(idx)) return;
     const e = batchIdx.get(idx);
-    const meanings = Array.isArray(o.meanings) ? o.meanings
-      .map((m) => ({ pos: String(m.pos || "").trim(), ko: (Array.isArray(m.ko) ? m.ko : [m.ko]).map((k) => String(k || "").trim()).filter(Boolean) }))
-      .filter((m) => m.ko.length) : [];
+    const context = String(o.context || "").trim();
+    const meanings = topSenses(Array.isArray(o.meanings) ? o.meanings
+      .map((m) => ({ pos: String(m.pos || "").trim(), ko: (Array.isArray(m.ko) ? m.ko : [m.ko]).map((k) => String(k || "").trim()).filter(Boolean) })) : [], context);
     if (!meanings.length) return;
     e.meanings = meanings;
     e.base = String(o.base || "").trim();
-    e.context = String(o.context || "").trim();
+    e.context = context;
     e.status = "done";
   }
 
@@ -549,10 +566,11 @@ ${lines}`;
     const data = await res.json();
     const main = (Array.isArray(data[0]) ? data[0] : []).map((x) => x && x[0]).filter(Boolean).join("").trim();
     let base = "";
-    const meanings = (Array.isArray(data[1]) ? data[1] : []).map((g) => {
+    // dictionary terms come ordered by frequency, so the first few per part of speech are the representative ones
+    const meanings = topSenses((Array.isArray(data[1]) ? data[1] : []).map((g) => {
       if (!base && typeof g[3] === "string") base = g[3];
-      return { pos: POS_KO[g[0]] || g[0] || "", ko: [...new Set((g[1] || []).map((k) => String(k).trim()).filter(Boolean))] };
-    }).filter((m) => m.ko.length);
+      return { pos: POS_KO[g[0]] || g[0] || "", ko: (g[1] || []).map((k) => String(k).trim()).filter(Boolean) };
+    }), main);
     // the plain translation is usually the most common sense; keep it in front when the dictionary lists it elsewhere or not at all
     if (main && main.toLowerCase() !== key && !meanings.some((m) => m.ko.includes(main))) meanings.unshift({ pos: "", ko: [main] });
     const r = { meanings, base, context: main };
