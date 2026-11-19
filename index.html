@@ -173,6 +173,10 @@ td.sent .more { display: block; font-family: var(--font-ui); font-size: 12px; co
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 19h16"/></svg>
       CSV 파일 받기 (.csv)
     </button>
+    <button class="btn" id="copyText" type="button" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1"/></svg>
+      텍스트로 복사하기
+    </button>
   </div>
   <p class="status" id="status" role="status" aria-live="polite"></p>
 
@@ -191,7 +195,7 @@ td.sent .more { display: block; font-family: var(--font-ui); font-size: 12px; co
         <tbody id="rows"></tbody>
       </table>
     </div>
-    <p class="foot">한글뜻 칸은 눌러서 직접 고칠 수 있어요. 잘못 잡힌 단어는 × 로 지우면 파일에서도 빠져요. 엑셀·CSV 파일에는 영단어와 한글뜻만 들어가요.</p>
+    <p class="foot">한글뜻 칸은 눌러서 직접 고칠 수 있어요. 잘못 잡힌 단어는 × 로 지우면 파일에서도 빠져요. 엑셀·CSV 파일과 텍스트 복사에는 영단어와 한글뜻만 들어가요.</p>
   </section>
 </main>
 
@@ -203,7 +207,7 @@ td.sent .more { display: block; font-family: var(--font-ui); font-size: 12px; co
   "use strict";
   const $ = (id) => document.getElementById(id);
   const fileInput = $("file"), drop = $("drop"), statusEl = $("status"), rowsEl = $("rows");
-  const btnXlsx = $("dlXlsx"), btnCsv = $("dlCsv"), btnRetry = $("retry");
+  const btnXlsx = $("dlXlsx"), btnCsv = $("dlCsv"), btnCopy = $("copyText"), btnRetry = $("retry");
 
   if (window.pdfjsLib) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -275,7 +279,7 @@ td.sent .more { display: block; font-family: var(--font-ui); font-size: 12px; co
   function render() {
     const list = isExample ? EXAMPLE : entries;
     $("exampleTag").hidden = !isExample;
-    btnXlsx.disabled = btnCsv.disabled = isExample || entries.length === 0;
+    btnXlsx.disabled = btnCsv.disabled = btnCopy.disabled = isExample || entries.length === 0;
     $("count").textContent = isExample ? "PDF를 첨부하면 이 자리에 단어가 채워져요" : `단어 ${entries.length}개`;
     btnRetry.hidden = isExample || !entries.some((e) => e.status === "error" && e.override == null);
     if (!isExample && entries.length === 0) {
@@ -672,7 +676,7 @@ ${lines}`;
     const size = file.size < 1024 * 1024 ? `${Math.max(1, Math.round(file.size / 1024))}KB` : `${(file.size / 1024 / 1024).toFixed(1)}MB`;
     $("fileInfo").innerHTML = `<strong>${esc(file.name)}</strong> · ${size} · 다른 파일을 올리려면 다시 첨부하세요`;
     isExample = false; entries = []; render();
-    btnXlsx.disabled = btnCsv.disabled = true;
+    btnXlsx.disabled = btnCsv.disabled = btnCopy.disabled = true;
     setStatus("PDF를 여는 중…");
     let pdf;
     try {
@@ -748,6 +752,31 @@ ${lines}`;
     const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
     const csv = "﻿" + [["영단어", "한글뜻"], ...tableRows()].map((r) => r.map(q).join(",")).join("\r\n");
     saveFile(`${baseName}_단어장.csv`, new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  });
+
+  // Same text Excel puts on the clipboard when you copy the word/meaning cells (no header):
+  // cells joined by tabs, every row ending in CRLF, and a cell quoted only if it holds a tab, line break or quote.
+  function excelClipboardText() {
+    const cell = (v) => { v = String(v); return /[\t\r\n"]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+    return tableRows().map((r) => r.map(cell).join("\t") + "\r\n").join("");
+  }
+
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch {}
+    // fallback for pages where the async clipboard API is blocked (file://, some embedded frames)
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch {}
+    ta.remove();
+    return ok;
+  }
+
+  btnCopy.addEventListener("click", async () => {
+    const ok = await copyText(excelClipboardText());
+    if (ok) setStatus(`단어 ${entries.length}개를 복사했어요. 클래스카드 세트 만들기에 붙여 넣으세요.`);
+    else setStatus("클립보드에 복사하지 못했어요. 엑셀·CSV 파일 받기를 이용해 주세요.", true);
   });
 
   btnXlsx.addEventListener("click", () => {
